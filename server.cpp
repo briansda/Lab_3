@@ -21,7 +21,9 @@
 #define HOST_NAME_SIZE 255
 #define MAXPATH 1000
 #define NQUEUE 200
+
 	
+using namespace std;
 	int hSocket,hServerSocket;  /* handle to socket */
 	struct hostent* pHostInfo;   /* holds info about a machine */
 	struct sockaddr_in Address; /* Internet socket address stuct */
@@ -31,20 +33,15 @@
 	char *cleint_request;
 	string directorypath;
 	char _directorypath[MAXPATH];
-	
+	sem_t full, empty, mutex;
+	char inputPath[255];
+	int socketsRespondedTo =0;	
 
-using namespace std;
-
-
-
-
-sem_t full, empty, mutex;
-char inputPath[255];
-int socketsRespondedTo =0;
+//insertion
 
 
 
-class myqueue
+class ThisQueue
 {
     std::queue<int> stlqueue;
 public:
@@ -53,11 +50,11 @@ public:
         sem_wait(&empty);
         sem_wait(&mutex);
         stlqueue.push(sock);
-        socketsRespondedTo++
+        socketsRespondedTo++;
         sem_post(&mutex);
         sem_post(&full);
     }
-    int pop
+    int pop()
     {
         sem_wait(&full);
         sem_wait(&mutex);
@@ -68,7 +65,7 @@ public:
         
         return rval;
     }
-} que;
+} sample_que;
 
 
 
@@ -267,7 +264,6 @@ void Read_Write_Response(int hSocket)
     if(close(hSocket) == SOCKET_ERROR)
     {
         printf("\nCould not close socket\n");
-        return 0;
     }
     
 }
@@ -283,7 +279,7 @@ void *socketWaiting(void *threadid)
     
     while (1)
     {
-        int socket = que.pop();
+        int socket = sample_que.pop();
         Read_Write_Response(socket);
     }
 }
@@ -306,7 +302,7 @@ int main(int argc, char* argv[])
 		nHostPort=atoi(argv[1]);
 		directorypath=argv[3];
 		strcpy(_directorypath, argv[3]);
-        nThreads=atoi(argv[2]);
+        	nThreads=atoi(argv[2]);
 	}
 
 	printf("\nStarting server");
@@ -363,20 +359,20 @@ int main(int argc, char* argv[])
 	int optval =1;
 	setsockopt (hServerSocket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
 
-    pthread_t threads[nThreads];
-    int rc;
-    long l;
-    for (l =0; l < nThreads; l++)
-    {
-        printf("In main: creating thread %1d\n", l);
-        rc = pthread_create(&threads[l], NULL, socketWaiting, (void *) t);
-        if (rc)
-        {
-            printf("ERROR; return cod from pthread_create is %d\n", rc);
-            exit(-1);
-        }
-    }
-    printf("\nDone making threads. Waiting for connections\n");
+  	pthread_t threads[nThreads];
+    	int rc;
+    	long l;
+    	for (l =0; l < nThreads; l++)
+    	{
+        	printf("Making thread %1d\n", l);
+        	rc = pthread_create(&threads[l], NULL, socketWaiting, (void *) l);
+        	if (rc)
+        	{
+            		printf("ERROR; return cod from pthread_create is %d\n", rc);
+            		exit(-1);
+        	}
+    	}
+    	printf("\nMade Threads\n");
     
     
 	//Prevent killing by pipe and setting up the handler
@@ -384,27 +380,26 @@ int main(int argc, char* argv[])
 	signew.sa_handler=handler;
 	sigemptyset(&signew.sa_mask);
 	sigaddset(&signew.sa_mask, SIGINT);
-    sigaddset(&signew.sa_mask, SIGSEGV);
-    sigaddset(&signew.sa_mask, SIGFPE);
-    sigaddset(&signew.sa_mask, SIGPIPE);
+   	sigaddset(&signew.sa_mask, SIGSEGV);
+   	sigaddset(&signew.sa_mask, SIGFPE);
+   	sigaddset(&signew.sa_mask, SIGPIPE);
 	signew.sa_flags=SA_RESTART;
-    sigaction(SIGINT, &signew, &sigold);
-    sigaction(SIGSREGV, &signew, &sigold);
-    sigaction(SIGFPE, &signew, &sigold);
-	//sigaction(SIGHUP,&signew,&sigold);
+   	sigaction(SIGINT, &signew, &sigold);
+   	sigaction(SIGSEGV, &signew, &sigold);
+   	sigaction(SIGFPE, &signew, &sigold);
 	sigaction(SIGPIPE,&signew,&sigold);
     
     
-    //Set up semaphores
-    sem_init(&full, PTHREAD_PROCESS_PRIVATE, 0);
-    sem_init(&empty, PTHREAD_PROCESS_PRIVATE, NQUEUE);
-    sem_init(&fmutex, PTHREAD_PROCESS_PRIVATE, 1);
+   	 //Set up semaphores
+   	 sem_init(&full, PTHREAD_PROCESS_PRIVATE, 0);
+   	 sem_init(&empty, PTHREAD_PROCESS_PRIVATE, NQUEUE);
+   	 sem_init(&mutex, PTHREAD_PROCESS_PRIVATE, 1);
     
 
 	for(;;)
 	{
         if(!(socketsRespondedTo%100))
-        {
+       {
             printf("\nSocketsRespondedTo:%i\n", socketsRespondedTo);
         }
         
@@ -413,7 +408,7 @@ int main(int argc, char* argv[])
 		hSocket=accept(hServerSocket,(struct sockaddr*)&Address,(socklen_t *)&nAddressSize);
 		printf("\nGot a connection from %X (%d)\n", Address.sin_addr.s_addr, ntohs(Address.sin_port));
 		//Read_Write_Response(hSocket);
-        que.push(hSocket);
+        sample_que.push(hSocket);
 		
 	}
 }
